@@ -29,16 +29,19 @@
 
         <div class="form-group mt-2">
             <label>Device</label>
-            <div class="radio-group">
-                {% if cuda_available %}
-                <label><input type="radio" name="device" value="cuda" checked> GPU (CUDA)</label>
-                <label><input type="radio" name="device" value="cpu"> CPU</label>
-                {% else %}
+            <div style="margin-bottom:0.5rem;">
+                <button type="button" class="btn btn-secondary" id="detectGpuBtn" style="font-size:0.85rem; padding:0.35rem 0.75rem;">
+                    Detect GPU
+                </button>
+                <span id="gpuDetectStatus" class="text-dim" style="margin-left:0.5rem; font-size:0.85rem;"></span>
+            </div>
+            <div id="gpuInfoBox" style="display:none; background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem; font-size:0.85rem;">
+            </div>
+            <div class="radio-group" id="deviceRadios">
                 <label><input type="radio" name="device" value="cpu" checked> CPU</label>
-                <label><input type="radio" name="device" value="cuda" disabled>
-                    <span class="text-dim">GPU (not available)</span>
+                <label id="gpuRadioLabel" style="display:none;">
+                    <input type="radio" name="device" value="cuda"> GPU (CUDA)
                 </label>
-                {% endif %}
             </div>
         </div>
 

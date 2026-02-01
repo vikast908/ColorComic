@@ -7,6 +7,7 @@ import threading
 import uuid
 
 import cv2
+import torch
 from dotenv import load_dotenv
 from flask import (
     Flask,
@@ -251,6 +252,39 @@ def model_status():
         "model_loaded": True,
         "device": colorizer.device_name,
         "cuda_available": colorizer.cuda_available,
+    })
+
+
+@app.route("/api/gpu-info")
+def gpu_info():
+    """Return detailed GPU information for the user to review."""
+    if not torch.cuda.is_available():
+        return jsonify({"available": False})
+
+    gpu_count = torch.cuda.device_count()
+    gpus = []
+    for i in range(gpu_count):
+        props = torch.cuda.get_device_properties(i)
+        mem_total = round(props.total_memory / (1024 ** 3), 1)
+        mem_used = round(torch.cuda.memory_allocated(i) / (1024 ** 3), 2)
+        mem_free = round(mem_total - mem_used, 1)
+        gpus.append({
+            "index": i,
+            "name": props.name,
+            "vram_total_gb": mem_total,
+            "vram_free_gb": mem_free,
+            "compute_capability": f"{props.major}.{props.minor}",
+            "multi_processors": props.multi_processor_count,
+        })
+
+    recommended = "cuda" if gpus and gpus[0]["vram_total_gb"] >= 2 else "cpu"
+
+    return jsonify({
+        "available": True,
+        "driver": torch.version.cuda,
+        "gpu_count": gpu_count,
+        "gpus": gpus,
+        "recommended": recommended,
     })
 
 

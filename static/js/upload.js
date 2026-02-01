@@ -41,6 +41,61 @@ function selectFile(file) {
     uploadBtn.disabled = false;
 }
 
+// GPU detection
+document.getElementById('detectGpuBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('detectGpuBtn');
+    const status = document.getElementById('gpuDetectStatus');
+    const infoBox = document.getElementById('gpuInfoBox');
+    const gpuLabel = document.getElementById('gpuRadioLabel');
+
+    btn.disabled = true;
+    status.textContent = 'Detecting...';
+
+    try {
+        const res = await fetch('/api/gpu-info');
+        const data = await res.json();
+
+        if (!data.available) {
+            infoBox.style.display = 'block';
+            infoBox.innerHTML = '<strong>No GPU detected.</strong><br><span class="text-dim">CUDA is not available. Using CPU mode.</span>';
+            status.textContent = '';
+            btn.disabled = false;
+            return;
+        }
+
+        const gpu = data.gpus[0];
+        const recText = data.recommended === 'cuda'
+            ? '<span style="color:#4caf50;">Recommended: GPU</span>'
+            : '<span style="color:#ff9800;">Recommended: CPU</span> (low VRAM)';
+
+        infoBox.style.display = 'block';
+        infoBox.innerHTML = `
+            <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+                <div>
+                    <strong>${gpu.name}</strong><br>
+                    <span class="text-dim">VRAM:</span> ${gpu.vram_total_gb} GB total, ${gpu.vram_free_gb} GB free<br>
+                    <span class="text-dim">Compute:</span> ${gpu.compute_capability} &middot; ${gpu.multi_processors} SMs<br>
+                    <span class="text-dim">CUDA:</span> ${data.driver}
+                </div>
+                <div style="align-self:center;">${recText}</div>
+            </div>
+        `;
+
+        // Show GPU radio and auto-select recommended
+        gpuLabel.style.display = '';
+        if (data.recommended === 'cuda') {
+            document.querySelector('input[name="device"][value="cuda"]').checked = true;
+        }
+
+        status.textContent = '';
+    } catch (err) {
+        status.textContent = 'Detection failed';
+        infoBox.style.display = 'block';
+        infoBox.innerHTML = '<span class="text-dim">Could not detect GPU. Using CPU mode.</span>';
+    }
+    btn.disabled = false;
+});
+
 // Upload
 uploadBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
