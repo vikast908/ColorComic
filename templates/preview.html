@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}ColorComic — Preview{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <div class="toolbar">
+        <div class="left">
+            <h2>Colorized Preview</h2>
+            <div class="view-toggle" id="viewToggle">
+                <button class="active" data-mode="side-by-side">Side by Side</button>
+                <button data-mode="colored">Colored Only</button>
+                <button data-mode="original">Original</button>
+            </div>
+        </div>
+        <div class="right">
+            <div class="page-nav">
+                <button class="btn btn-secondary btn-sm" id="prevPage">&larr; Prev</button>
+                <span>Page <input type="number" id="pageNumInput" value="1" min="1" max="{{ job.page_count }}"> / {{ job.page_count }}</span>
+                <button class="btn btn-secondary btn-sm" id="nextPage">Next &rarr;</button>
+            </div>
+            <a href="/api/download/{{ job.job_id }}" class="btn btn-primary">Download PDF</a>
+        </div>
+    </div>
+
+    <div id="viewContainer">
+        <div class="side-by-side" id="sideBySide">
+            <div>
+                <div class="label">Original (B&W)</div>
+                <div class="image-viewer">
+                    <img id="originalImg" src="/pages/{{ job.job_id }}/0" alt="Original">
+                </div>
+            </div>
+            <div>
+                <div class="label">Colorized</div>
+                <div class="image-viewer">
+                    <img id="colorizedImg" src="" alt="Colorized">
+                    <div id="previewLoading" class="flex items-center gap-1">
+                        <span class="spinner"></span> Loading...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const JOB_ID = "{{ job.job_id }}";
+    const PAGE_COUNT = {{ job.page_count }};
+
+    let currentPreviewPage = 0;
+
+    function loadPreview(page) {
+        currentPreviewPage = page;
+        document.getElementById('originalImg').src = `/pages/${JOB_ID}/${page}`;
+        document.getElementById('colorizedImg').style.display = 'none';
+        document.getElementById('previewLoading').style.display = 'flex';
+        const img = document.getElementById('colorizedImg');
+        img.onload = () => {
+            img.style.display = 'block';
+            document.getElementById('previewLoading').style.display = 'none';
+        };
+        img.src = `/api/preview/${JOB_ID}/${page}?t=${Date.now()}`;
+        document.getElementById('pageNumInput').value = page + 1;
+    }
+
+    document.getElementById('prevPage').onclick = () => {
+        if (currentPreviewPage > 0) loadPreview(currentPreviewPage - 1);
+    };
+    document.getElementById('nextPage').onclick = () => {
+        if (currentPreviewPage < PAGE_COUNT - 1) loadPreview(currentPreviewPage + 1);
+    };
+    document.getElementById('pageNumInput').onchange = (e) => {
+        const p = Math.max(0, Math.min(PAGE_COUNT - 1, parseInt(e.target.value) - 1));
+        loadPreview(p);
+    };
+
+    // View toggle
+    document.querySelectorAll('#viewToggle button').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('#viewToggle button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const mode = btn.dataset.mode;
+            const container = document.getElementById('sideBySide');
+            if (mode === 'side-by-side') {
+                container.style.gridTemplateColumns = '1fr 1fr';
+                container.children[0].style.display = '';
+                container.children[1].style.display = '';
+            } else if (mode === 'colored') {
+                container.style.gridTemplateColumns = '1fr';
+                container.children[0].style.display = 'none';
+                container.children[1].style.display = '';
+            } else {
+                container.style.gridTemplateColumns = '1fr';
+                container.children[0].style.display = '';
+                container.children[1].style.display = 'none';
+            }
+        };
+    });
+
+    // Init
+    loadPreview(0);
+</script>
+{% endblock %}

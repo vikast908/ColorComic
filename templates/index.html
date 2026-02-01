@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}ColorComic — Upload{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 640px;">
+    <div class="card mt-3">
+        <h2 style="margin-bottom: 1.5rem;">Upload B&W Comic PDF</h2>
+
+        <div class="upload-zone" id="dropZone">
+            <div class="icon">&#128196;</div>
+            <p><strong>Drop your PDF here</strong></p>
+            <p>or click to browse</p>
+            <input type="file" id="fileInput" accept=".pdf">
+        </div>
+
+        <div id="fileInfo" class="file-info" style="display:none;">
+            <strong id="fileName"></strong>
+            <span id="fileSize" class="text-dim" style="margin-left:0.5rem;"></span>
+        </div>
+
+        <div class="form-group mt-2">
+            <label>Comic Style</label>
+            <div class="radio-group">
+                <label><input type="radio" name="style" value="auto" checked> Auto-detect</label>
+                <label><input type="radio" name="style" value="western"> Western</label>
+                <label><input type="radio" name="style" value="manga"> Manga</label>
+            </div>
+        </div>
+
+        <div class="form-group mt-2">
+            <label>Device</label>
+            <div class="radio-group">
+                {% if cuda_available %}
+                <label><input type="radio" name="device" value="cuda" checked> GPU (CUDA)</label>
+                <label><input type="radio" name="device" value="cpu"> CPU</label>
+                {% else %}
+                <label><input type="radio" name="device" value="cpu" checked> CPU</label>
+                <label><input type="radio" name="device" value="cuda" disabled>
+                    <span class="text-dim">GPU (not available)</span>
+                </label>
+                {% endif %}
+            </div>
+        </div>
+
+        <button class="btn btn-primary mt-2" id="uploadBtn" style="width:100%;" disabled>
+            Upload &amp; Colorize
+        </button>
+
+        <div id="uploadProgress" style="display:none;" class="mt-2">
+            <div class="progress-bar"><div class="fill" id="uploadFill"></div></div>
+            <div class="progress-info">
+                <span id="uploadStatus">Uploading...</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+{% endblock %}

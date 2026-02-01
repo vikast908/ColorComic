@@ -1,0 +1,14 @@
+uploads/
+output/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+models/weights/
+.claude/
+nul
+test files/

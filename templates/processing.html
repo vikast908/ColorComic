@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}ColorComic — Processing{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 900px;">
+    <div class="card mt-3 text-center">
+        <h2 style="margin-bottom:1.5rem;">Colorizing Your Comic</h2>
+
+        <div id="processingActive">
+            <div class="flex items-center justify-between" style="justify-content:center; gap:0.75rem;">
+                <span class="spinner"></span>
+                <span id="stepText">Starting colorization...</span>
+            </div>
+            <p class="text-dim" style="font-size:0.75rem; margin-top:0.25rem;">
+                Device: <strong>{{ job.device | upper }}</strong>
+            </p>
+
+            <div class="progress-bar mt-2"><div class="fill" id="colorFill"></div></div>
+            <div class="progress-info">
+                <span id="colorCounter">0 / {{ job.page_count }}</span>
+                <span id="colorPct">0%</span>
+            </div>
+
+            <div id="previewArea" class="mt-2" style="display:none;">
+                <p class="text-dim" style="font-size:0.85rem; margin-bottom:0.5rem;">
+                    Page <span id="previewPageNum">1</span> result:
+                </p>
+                <div style="display:flex; gap:1rem; justify-content:center; align-items:flex-start; flex-wrap:wrap;">
+                    <div style="text-align:center;">
+                        <div class="text-dim" style="font-size:0.75rem; margin-bottom:0.25rem;">Original</div>
+                        <img id="previewOrigImg"
+                             style="max-width:360px; max-height:500px; border-radius:8px; border:1px solid var(--border); object-fit:contain;">
+                    </div>
+                    <div style="text-align:center;">
+                        <div class="text-dim" style="font-size:0.75rem; margin-bottom:0.25rem;">Colorized</div>
+                        <img id="previewColorImg"
+                             style="max-width:360px; max-height:500px; border-radius:8px; border:1px solid var(--border); object-fit:contain;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="processingDone" style="display:none;">
+            <div style="font-size:3rem; margin-bottom:1rem;">&#10003;</div>
+            <h3>Colorization Complete!</h3>
+            <p class="text-dim mt-1">Your comic has been colorized successfully.</p>
+            <div class="flex mt-2" style="justify-content:center; gap:0.75rem;">
+                <a href="/api/download/{{ job.job_id }}" class="btn btn-primary">Download Colored PDF</a>
+                <a href="/preview/{{ job.job_id }}" class="btn btn-secondary">Review Pages</a>
+            </div>
+        </div>
+
+        <div id="processingError" style="display:none;">
+            <div style="font-size:3rem; margin-bottom:1rem;">&#10060;</div>
+            <h3>Error</h3>
+            <p class="text-dim mt-1" id="errorText"></p>
+            <a href="/" class="btn btn-secondary mt-2">Back to Upload</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const JOB_ID = "{{ job.job_id }}";
+    const PAGE_COUNT = {{ job.page_count }};
+
+    const evtSource = new EventSource(`/api/colorize/${JOB_ID}/stream`);
+
+    evtSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+
+        if (data.heartbeat) return;
+
+        if (data.error) {
+            evtSource.close();
+            document.getElementById('processingActive').style.display = 'none';
+            document.getElementById('processingError').style.display = 'block';
+            document.getElementById('errorText').textContent = data.error;
+            return;
+        }
+
+        if (data.done) {
+            evtSource.close();
+            document.getElementById('processingActive').style.display = 'none';
+            document.getElementById('processingDone').style.display = 'block';
+            return;
+        }
+
+        const page = data.page;
+        const total = data.total;
+        const pct = Math.round(((page + 1) / total) * 100);
+
+        document.getElementById('colorFill').style.width = pct + '%';
+        document.getElementById('colorCounter').textContent = `${page + 1} / ${total}`;
+        document.getElementById('colorPct').textContent = pct + '%';
+
+        if (data.status === 'colorizing') {
+            document.getElementById('stepText').textContent = `Colorizing page ${page + 1}...`;
+        }
+
+        if (data.status === 'done_page') {
+            // Show side-by-side preview of the just-completed page
+            const area = document.getElementById('previewArea');
+            area.style.display = 'block';
+            document.getElementById('previewPageNum').textContent = page + 1;
+            document.getElementById('previewOrigImg').src = `/pages/${JOB_ID}/${page}?t=${Date.now()}`;
+            document.getElementById('previewColorImg').src = `/api/preview/${JOB_ID}/${page}?t=${Date.now()}`;
+        }
+    };
+
+    evtSource.onerror = function() {
+        evtSource.close();
+    };
+</script>
+{% endblock %}
