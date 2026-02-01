@@ -19,6 +19,48 @@
         </div>
 
         <div class="form-group mt-2">
+            <label>Colorization Mode</label>
+            <div class="radio-group">
+                <label>
+                    <input type="radio" name="mode" value="auto" checked>
+                    Auto (mc-v2)
+                </label>
+                <label>
+                    <input type="radio" name="mode" value="reference">
+                    Reference (MangaNinja)
+                </label>
+            </div>
+        </div>
+
+        <div id="referenceSection" style="display:none;">
+            <div class="form-group">
+                <label>Reference Image</label>
+                <p class="text-dim" style="font-size:0.8rem; margin-bottom:0.5rem;">
+                    Upload one colored page to use as a color reference for all pages.
+                </p>
+                <div class="ref-upload-zone" id="refDropZone">
+                    <div id="refPlaceholder">
+                        <div class="icon" style="font-size:2rem;">&#127912;</div>
+                        <p><strong>Drop reference image here</strong></p>
+                        <p>PNG, JPG, or WEBP</p>
+                    </div>
+                    <div id="refPreview" style="display:none;">
+                        <img id="refPreviewImg" alt="Reference preview">
+                        <button type="button" class="btn btn-sm btn-secondary" id="refRemoveBtn"
+                                style="position:absolute; top:8px; right:8px;">Remove</button>
+                    </div>
+                    <input type="file" id="refFileInput" accept="image/png,image/jpeg,image/webp">
+                </div>
+            </div>
+            <div class="license-notice">
+                MangaNinja is licensed under
+                <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">CC BY-NC 4.0</a>
+                — non-commercial use only.
+                First use downloads ~6 GB of model weights.
+            </div>
+        </div>
+
+        <div class="form-group mt-2">
             <label>Comic Style</label>
             <div class="radio-group">
                 <label><input type="radio" name="style" value="auto" checked> Auto-detect</label>

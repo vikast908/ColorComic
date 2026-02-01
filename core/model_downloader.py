@@ -83,3 +83,56 @@ def ensure_models_downloaded(weights_dir: str, callback=None):
     _gdrive_download(_DENOISER_ID, denoiser_path, "denoiser weights (~7 MB)", callback)
 
     return generator_path, extractor_path, denoiser_dir
+
+
+def ensure_manganinja_downloaded(config, callback=None):
+    """Download MangaNinja weights from HuggingFace if not present.
+
+    Downloads 4 ``.pth`` files from the ``Johanan0528/MangaNinja`` repo
+    into *config.MANGANINJA_WEIGHTS_DIR*.
+    """
+    from huggingface_hub import hf_hub_download
+
+    weights_dir = config.MANGANINJA_WEIGHTS_DIR
+    os.makedirs(weights_dir, exist_ok=True)
+
+    files = [
+        ("denoising_unet.pth", config.MANGANINJA_DENOISING_UNET),
+        ("reference_unet.pth", config.MANGANINJA_REFERENCE_UNET),
+        ("point_net.pth", config.MANGANINJA_POINTNET),
+        ("controlnet.pth", config.MANGANINJA_CONTROLNET),
+    ]
+
+    for fname, dest_path in files:
+        if os.path.exists(dest_path):
+            continue
+        if callback:
+            callback(f"Downloading MangaNinja {fname}...")
+        downloaded = hf_hub_download(
+            repo_id=config.MANGANINJA_HF_REPO,
+            filename=fname,
+            local_dir=weights_dir,
+        )
+        # hf_hub_download may place in a sub-path; move if needed
+        if downloaded != dest_path and os.path.exists(downloaded):
+            import shutil
+            shutil.move(downloaded, dest_path)
+        if callback:
+            callback(f"Downloaded MangaNinja {fname}")
+
+
+def ensure_esrgan_downloaded(config, callback=None):
+    """Download Real-ESRGAN anime weights if not present."""
+    dest = config.ESRGAN_MODEL_PATH
+    if os.path.exists(dest):
+        return
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+
+    if callback:
+        callback("Downloading Real-ESRGAN weights (~17 MB)...")
+
+    import urllib.request
+    urllib.request.urlretrieve(config.ESRGAN_MODEL_URL, dest)
+
+    if callback:
+        callback("Downloaded Real-ESRGAN weights")

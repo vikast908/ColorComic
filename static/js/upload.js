@@ -6,8 +6,10 @@ const uploadBtn = document.getElementById('uploadBtn');
 const fileInfo = document.getElementById('fileInfo');
 
 let selectedFile = null;
+let selectedRefFile = null;
 
-// Drag and drop
+// ── PDF Drag and Drop ───────────────────────────────────────────────────────
+
 dropZone.addEventListener('click', () => fileInput.click());
 
 dropZone.addEventListener('dragover', e => {
@@ -38,10 +40,110 @@ function selectFile(file) {
     const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
     document.getElementById('fileSize').textContent = `(${sizeMB} MB)`;
     fileInfo.style.display = 'block';
+    updateUploadButtonState();
+}
+
+// ── Colorization Mode Toggle ────────────────────────────────────────────────
+
+const modeRadios = document.querySelectorAll('input[name="mode"]');
+const referenceSection = document.getElementById('referenceSection');
+
+modeRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+        const isReference = radio.value === 'reference' && radio.checked;
+        referenceSection.style.display = isReference ? 'block' : 'none';
+        updateUploadButtonState();
+    });
+});
+
+function getSelectedMode() {
+    const checked = document.querySelector('input[name="mode"]:checked');
+    return checked ? checked.value : 'auto';
+}
+
+// ── Reference Image Upload ──────────────────────────────────────────────────
+
+const refDropZone = document.getElementById('refDropZone');
+const refFileInput = document.getElementById('refFileInput');
+const refPlaceholder = document.getElementById('refPlaceholder');
+const refPreview = document.getElementById('refPreview');
+const refPreviewImg = document.getElementById('refPreviewImg');
+const refRemoveBtn = document.getElementById('refRemoveBtn');
+
+refDropZone.addEventListener('click', (e) => {
+    if (e.target === refRemoveBtn || e.target.closest('#refRemoveBtn')) return;
+    refFileInput.click();
+});
+
+refDropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    refDropZone.classList.add('dragover');
+});
+
+refDropZone.addEventListener('dragleave', () => {
+    refDropZone.classList.remove('dragover');
+});
+
+refDropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    refDropZone.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length && isImageFile(files[0])) {
+        selectRefFile(files[0]);
+    }
+});
+
+refFileInput.addEventListener('change', () => {
+    if (refFileInput.files.length) selectRefFile(refFileInput.files[0]);
+});
+
+refRemoveBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearRefFile();
+});
+
+function isImageFile(file) {
+    return /\.(png|jpe?g|webp)$/i.test(file.name);
+}
+
+function selectRefFile(file) {
+    selectedRefFile = file;
+    const url = URL.createObjectURL(file);
+    refPreviewImg.src = url;
+    refPlaceholder.style.display = 'none';
+    refPreview.style.display = 'block';
+    updateUploadButtonState();
+}
+
+function clearRefFile() {
+    selectedRefFile = null;
+    refFileInput.value = '';
+    refPlaceholder.style.display = 'block';
+    refPreview.style.display = 'none';
+    if (refPreviewImg.src) {
+        URL.revokeObjectURL(refPreviewImg.src);
+        refPreviewImg.src = '';
+    }
+    updateUploadButtonState();
+}
+
+// ── Upload Button State ─────────────────────────────────────────────────────
+
+function updateUploadButtonState() {
+    const mode = getSelectedMode();
+    if (!selectedFile) {
+        uploadBtn.disabled = true;
+        return;
+    }
+    if (mode === 'reference' && !selectedRefFile) {
+        uploadBtn.disabled = true;
+        return;
+    }
     uploadBtn.disabled = false;
 }
 
-// GPU detection
+// ── GPU Detection ───────────────────────────────────────────────────────────
+
 document.getElementById('detectGpuBtn').addEventListener('click', async () => {
     const btn = document.getElementById('detectGpuBtn');
     const status = document.getElementById('gpuDetectStatus');
@@ -96,13 +198,21 @@ document.getElementById('detectGpuBtn').addEventListener('click', async () => {
     btn.disabled = false;
 });
 
-// Upload
+// ── Upload ──────────────────────────────────────────────────────────────────
+
 uploadBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
     uploadBtn.disabled = true;
 
     const formData = new FormData();
     formData.append('file', selectedFile);
+
+    const mode = getSelectedMode();
+    formData.append('mode', mode);
+
+    if (mode === 'reference' && selectedRefFile) {
+        formData.append('reference', selectedRefFile);
+    }
 
     const style = document.querySelector('input[name="style"]:checked');
     if (style) formData.append('style', style.value);

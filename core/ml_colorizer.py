@@ -1,5 +1,6 @@
 """ML-based manga/comic colorization using manga-colorization-v2."""
 
+import gc
 import sys
 import os
 import threading
@@ -118,3 +119,13 @@ class MangaColorizer:
                                     interpolation=cv2.INTER_LANCZOS4)
 
         return result_bgr
+
+    def unload(self):
+        """Release model and free GPU memory."""
+        with self._lock:
+            if self._model is not None:
+                del self._model
+                self._model = None
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()

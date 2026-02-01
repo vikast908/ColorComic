@@ -1,0 +1,1 @@
+"""MangaNinja custom model components."""

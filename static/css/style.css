@@ -135,6 +135,62 @@ body {
 
 .upload-zone input[type="file"] { display: none; }
 
+/* ── Reference Upload Zone ───────────────────────────────────────── */
+
+.ref-upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ref-upload-zone:hover,
+.ref-upload-zone.dragover {
+    border-color: var(--accent);
+    background: rgba(108, 99, 255, 0.05);
+}
+
+.ref-upload-zone p { color: var(--text-dim); margin-top: 0.25rem; font-size: 0.85rem; }
+
+.ref-upload-zone input[type="file"] { display: none; }
+
+.ref-upload-zone #refPreview {
+    position: relative;
+    width: 100%;
+}
+
+.ref-upload-zone #refPreview img {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 8px;
+    object-fit: contain;
+}
+
+/* ── License Notice ──────────────────────────────────────────────── */
+
+.license-notice {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.8rem;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    line-height: 1.4;
+}
+
+.license-notice a {
+    color: var(--warning);
+    text-decoration: underline;
+}
+
 /* ── Form Controls ────────────────────────────────────────────────── */
 
 .form-group { margin-bottom: 1.25rem; }

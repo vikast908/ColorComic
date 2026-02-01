@@ -22,9 +22,11 @@ from flask import (
 
 from config import Config
 from core.color_consistency import ColorConsistencyManager
-from core.ml_colorizer import MangaColorizer
+from core.model_manager import ModelManager
 from core.model_downloader import ensure_models_downloaded
 from core.pdf_handler import extract_pages, get_page_count, reassemble_pdf
+from core.postprocessor import PostProcessor
+from core.upscaler import Upscaler
 from models.schemas import JobState
 
 load_dotenv()
@@ -46,14 +48,28 @@ for folder in (Config.UPLOAD_FOLDER, Config.OUTPUT_FOLDER):
 print("Checking model weights...")
 ensure_models_downloaded(Config.WEIGHTS_DIR, callback=print)
 
-print("Loading colorization model...")
-colorizer = MangaColorizer(
+print("Initializing model manager...")
+model_manager = ModelManager(device=Config.ML_DEVICE)
+
+# Pre-load auto mode (mc-v2) at startup
+model_manager.get_colorizer("auto")
+
+# ── Post-processing pipeline ────────────────────────────────────────────────
+
+upscaler = Upscaler(
+    model_path=Config.ESRGAN_MODEL_PATH,
+    model_url=Config.ESRGAN_MODEL_URL,
+    scale=Config.ESRGAN_SCALE,
+    tile=Config.ESRGAN_TILE,
     device=Config.ML_DEVICE,
-    generator_path=Config.GENERATOR_WEIGHTS_PATH,
-    extractor_path=Config.EXTRACTOR_WEIGHTS_PATH,
-    denoiser_weights_dir=Config.DENOISER_WEIGHTS_DIR,
+) if Config.POSTPROCESS_UPSCALE else None
+
+post_processor = PostProcessor(
+    l_channel=Config.POSTPROCESS_L_CHANNEL,
+    guided_filter=Config.POSTPROCESS_GUIDED_FILTER,
+    upscale=Config.POSTPROCESS_UPSCALE,
+    upscaler=upscaler,
 )
-print(f"Model loaded on {colorizer.device_name}")
 
 
 # ── Pages ────────────────────────────────────────────────────────────────────
@@ -61,8 +77,11 @@ print(f"Model loaded on {colorizer.device_name}")
 
 @app.route("/")
 def index():
-    return render_template("index.html", cuda_available=colorizer.cuda_available,
-                               current_device=colorizer.device_name)
+    return render_template(
+        "index.html",
+        cuda_available=model_manager.cuda_available,
+        current_device=model_manager.device_name,
+    )
 
 
 @app.route("/preview/<job_id>")
@@ -105,6 +124,19 @@ def upload_pdf():
 
     style = request.form.get("style", "auto")
     device = request.form.get("device", "auto")
+    mode = request.form.get("mode", "auto")
+
+    # Handle reference image for reference mode
+    reference_image_path = None
+    if mode == "reference" and "reference" in request.files:
+        ref_file = request.files["reference"]
+        if ref_file.filename:
+            ref_path = os.path.join(job_dir, "reference" + os.path.splitext(ref_file.filename)[1])
+            ref_file.save(ref_path)
+            reference_image_path = ref_path
+
+    if mode == "reference" and not reference_image_path:
+        return jsonify({"error": "Reference mode requires a reference image"}), 400
 
     job = JobState(
         job_id=job_id,
@@ -113,6 +145,8 @@ def upload_pdf():
         page_images=page_images,
         style=style,
         device=device,
+        mode=mode,
+        reference_image_path=reference_image_path,
     )
     jobs[job_id] = job
 
@@ -165,7 +199,15 @@ def start_colorize(job_id):
     def _run():
         try:
             # Switch device if user requested a specific one
-            colorizer.switch_device(job.device)
+            model_manager.switch_device(job.device)
+
+            # Get the right colorizer for this mode
+            colorizer = model_manager.get_colorizer(job.mode)
+
+            # Load reference image if in reference mode
+            ref_image = None
+            if job.mode == "reference" and job.reference_image_path:
+                ref_image = cv2.imread(job.reference_image_path)
 
             consistency = ColorConsistencyManager()
             colored_paths = []
@@ -174,15 +216,25 @@ def start_colorize(job_id):
                 q.put({"page": i, "total": job.page_count, "status": "colorizing"})
 
                 image = cv2.imread(img_path)
-                result = colorizer.colorize(image)
 
-                # Color consistency: page 0 sets the reference
-                if i == 0:
-                    consistency.set_reference(result)
+                # Colorize based on mode
+                if job.mode == "reference":
+                    result = colorizer.colorize(image, reference_image=ref_image)
                 else:
-                    result = consistency.apply(
-                        result, strength=Config.COLOR_TRANSFER_STRENGTH
-                    )
+                    result = colorizer.colorize(image)
+
+                # Post-processing (applied to both modes)
+                result = post_processor.process(result, image)
+
+                # Color consistency: only for auto mode (reference mode has
+                # inherent consistency from the reference image)
+                if job.mode == "auto":
+                    if i == 0:
+                        consistency.set_reference(result)
+                    else:
+                        result = consistency.apply(
+                            result, strength=Config.COLOR_TRANSFER_STRENGTH
+                        )
 
                 out_path = os.path.join(out_dir, f"colored_{i:04d}.jpg")
                 cv2.imwrite(out_path, result, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -250,8 +302,9 @@ def download_pdf(job_id):
 def model_status():
     return jsonify({
         "model_loaded": True,
-        "device": colorizer.device_name,
-        "cuda_available": colorizer.cuda_available,
+        "device": model_manager.device_name,
+        "cuda_available": model_manager.cuda_available,
+        "current_mode": model_manager.current_mode,
     })
 
 
@@ -289,6 +342,5 @@ def gpu_info():
 
 
 # ── Run ──────────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
-    app.run(debug=True, port=5000, threaded=True)
+    app.run(debug=True, port=5000, threaded=True, use_reloader=False)

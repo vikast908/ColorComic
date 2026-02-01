@@ -29,3 +29,5 @@ class JobState(BaseModel):
     current_step: str = ""
     style: str = "auto"
     device: str = "auto"
+    mode: str = "auto"  # "auto" (mc-v2) or "reference" (MangaNinja)
+    reference_image_path: Optional[str] = None
