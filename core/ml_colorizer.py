@@ -90,8 +90,9 @@ class MangaColorizer:
 
         with self._lock:
             try:
-                self._model.set_image(rgb, size=size, apply_denoise=True)
-                result = self._model.colorize()
+                with torch.inference_mode():
+                    self._model.set_image(rgb, size=size, apply_denoise=True)
+                    result = self._model.colorize()
             except RuntimeError as exc:
                 if "out of memory" in str(exc).lower() and self.device_name != "cpu":
                     # OOM fallback: retry on CPU
@@ -104,19 +105,22 @@ class MangaColorizer:
                         denoiser_weights_dir=self._denoiser_weights_dir,
                     )
                     self.device_name = "cpu"
-                    self._model.set_image(rgb, size=size, apply_denoise=True)
-                    result = self._model.colorize()
+                    with torch.inference_mode():
+                        self._model.set_image(rgb, size=size, apply_denoise=True)
+                        result = self._model.colorize()
                 else:
                     raise
 
         # result is float32 RGB in [0, 1] — convert to BGR uint8
-        result_uint8 = (np.clip(result, 0, 1) * 255).astype(np.uint8)
+        result_uint8 = np.clip(result * 255.0, 0, 255).astype(np.uint8)
         result_bgr = cv2.cvtColor(result_uint8, cv2.COLOR_RGB2BGR)
 
         # Resize back to original dimensions
         if result_bgr.shape[:2] != (orig_h, orig_w):
-            result_bgr = cv2.resize(result_bgr, (orig_w, orig_h),
-                                    interpolation=cv2.INTER_LANCZOS4)
+            # INTER_AREA for downsampling, INTER_LANCZOS4 for upsampling
+            rh, rw = result_bgr.shape[:2]
+            interp = cv2.INTER_AREA if (rh > orig_h or rw > orig_w) else cv2.INTER_LANCZOS4
+            result_bgr = cv2.resize(result_bgr, (orig_w, orig_h), interpolation=interp)
 
         return result_bgr
 

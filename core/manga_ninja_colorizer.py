@@ -161,29 +161,28 @@ class MangaNinjaColorizer:
 
         orig_h, orig_w = image.shape[:2]
 
-        # Convert BGR -> RGB PIL
-        target_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        ref_rgb = cv2.cvtColor(reference_image, cv2.COLOR_BGR2RGB)
-
-        target_pil = PIL.Image.fromarray(target_rgb)
-        ref_pil = PIL.Image.fromarray(ref_rgb)
+        # Convert BGR -> RGB PIL directly (single conversion per image)
+        target_pil = PIL.Image.fromarray(image[:, :, ::-1])
+        ref_pil = PIL.Image.fromarray(reference_image[:, :, ::-1])
 
         with self._lock:
-            result_rgb = self._pipeline(
-                ref_image=ref_pil,
-                target_image=target_pil,
-                num_inference_steps=self._config.MANGANINJA_DENOISE_STEPS,
-                width=size,
-                height=size,
-            )
+            with torch.inference_mode():
+                result_rgb = self._pipeline(
+                    ref_image=ref_pil,
+                    target_image=target_pil,
+                    num_inference_steps=self._config.MANGANINJA_DENOISE_STEPS,
+                    width=size,
+                    height=size,
+                )
 
         # Convert RGB -> BGR
         result_bgr = cv2.cvtColor(result_rgb, cv2.COLOR_RGB2BGR)
 
         # Resize back to original dimensions
         if result_bgr.shape[:2] != (orig_h, orig_w):
-            result_bgr = cv2.resize(result_bgr, (orig_w, orig_h),
-                                    interpolation=cv2.INTER_LANCZOS4)
+            rh, rw = result_bgr.shape[:2]
+            interp = cv2.INTER_AREA if (rh > orig_h or rw > orig_w) else cv2.INTER_LANCZOS4
+            result_bgr = cv2.resize(result_bgr, (orig_w, orig_h), interpolation=interp)
 
         return result_bgr
 

@@ -2,41 +2,37 @@
 
 import os
 
+import cv2
 import fitz  # PyMuPDF
 
 
 def get_page_count(pdf_path: str) -> int:
-    doc = fitz.open(pdf_path)
-    count = len(doc)
-    doc.close()
-    return count
+    with fitz.open(pdf_path) as doc:
+        return len(doc)
 
 
 def extract_pages(pdf_path: str, output_dir: str, dpi: int = 300) -> list[str]:
     """Render each PDF page as a PNG image. Returns list of image paths."""
     os.makedirs(output_dir, exist_ok=True)
-    doc = fitz.open(pdf_path)
-    zoom = dpi / 72.0
-    mat = fitz.Matrix(zoom, zoom)
     paths = []
-    for i, page in enumerate(doc):
-        pix = page.get_pixmap(matrix=mat)
-        out_path = os.path.join(output_dir, f"page_{i:04d}.png")
-        pix.save(out_path)
-        paths.append(out_path)
-    doc.close()
+    with fitz.open(pdf_path) as doc:
+        zoom = dpi / 72.0
+        mat = fitz.Matrix(zoom, zoom)
+        for i, page in enumerate(doc):
+            pix = page.get_pixmap(matrix=mat)
+            out_path = os.path.join(output_dir, f"page_{i:04d}.png")
+            pix.save(out_path)
+            paths.append(out_path)
     return paths
 
 
 def get_page_image_bytes(pdf_path: str, page_num: int, dpi: int = 150) -> bytes:
     """Return a single page as PNG bytes."""
-    doc = fitz.open(pdf_path)
-    page = doc[page_num]
-    zoom = dpi / 72.0
-    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-    data = pix.tobytes("png")
-    doc.close()
-    return data
+    with fitz.open(pdf_path) as doc:
+        page = doc[page_num]
+        zoom = dpi / 72.0
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+        return pix.tobytes("png")
 
 
 def reassemble_pdf(
@@ -59,11 +55,15 @@ def reassemble_pdf(
             orig_page = orig_doc[i]
             w, h = orig_page.rect.width, orig_page.rect.height
         else:
-            # Use the image's own dimensions (in points at 72 dpi)
-            img_doc = fitz.open(img_path)
-            w = img_doc[0].rect.width
-            h = img_doc[0].rect.height
-            img_doc.close()
+            # Use cv2 to get image dimensions (fast, no PDF overhead)
+            img = cv2.imread(img_path)
+            if img is not None:
+                ih, iw = img.shape[:2]
+                # Convert pixels to points at 72 DPI
+                w, h = float(iw), float(ih)
+                del img
+            else:
+                w, h = 612.0, 792.0  # US Letter fallback
 
         page = doc.new_page(width=w, height=h)
         page.insert_image(page.rect, filename=img_path)
@@ -71,6 +71,7 @@ def reassemble_pdf(
     if orig_doc:
         orig_doc.close()
 
-    doc.save(output_path, deflate=True)
+    # Skip deflate — images are already JPEG compressed
+    doc.save(output_path)
     doc.close()
     return output_path

@@ -96,7 +96,10 @@ def _tile_process(model: RRDBNet, img: torch.Tensor, scale: int,
     """Run *model* on *img* using overlapping tiles to limit VRAM."""
     batch, channel, height, width = img.shape
     out_h, out_w = height * scale, width * scale
-    output = img.new_zeros(batch, channel, out_h, out_w)
+
+    # Accumulate on GPU to avoid per-tile PCIe transfers
+    output = torch.zeros(batch, channel, out_h, out_w,
+                         dtype=img.dtype, device=device)
 
     tiles_x = math.ceil(width / tile_size)
     tiles_y = math.ceil(height / tile_size)
@@ -116,9 +119,7 @@ def _tile_process(model: RRDBNet, img: torch.Tensor, scale: int,
             y_end_pad = min(y_end + tile_pad, height)
 
             tile = img[:, :, y_start_pad:y_end_pad, x_start_pad:x_end_pad].to(device)
-
-            with torch.no_grad():
-                out_tile = model(tile)
+            out_tile = model(tile)
 
             # Output tile boundaries (scaled)
             ox_start = (x_start - x_start_pad) * scale
@@ -126,14 +127,16 @@ def _tile_process(model: RRDBNet, img: torch.Tensor, scale: int,
             ox_end = ox_start + (x_end - x_start) * scale
             oy_end = oy_start + (y_end - y_start) * scale
 
-            # Destination in full output
+            # Destination in full output — stays on GPU
             dx_start = x_start * scale
             dy_start = y_start * scale
             dx_end = x_end * scale
             dy_end = y_end * scale
 
             output[:, :, dy_start:dy_end, dx_start:dx_end] = \
-                out_tile[:, :, oy_start:oy_end, ox_start:ox_end].cpu()
+                out_tile[:, :, oy_start:oy_end, ox_start:ox_end]
+
+            del tile, out_tile
 
     return output
 
@@ -204,9 +207,9 @@ class Upscaler:
             if self._model is None:
                 self._load_model()
 
-            # BGR uint8 -> RGB float32 tensor
-            img = image[:, :, ::-1].astype(np.float32) / 255.0
-            img_t = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0)
+            # BGR uint8 -> RGB float tensor (contiguous for efficient transfer)
+            img = np.ascontiguousarray(image[:, :, ::-1]).astype(np.float32) / 255.0
+            img_t = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).contiguous()
 
             if self._device.type == "cuda":
                 img_t = img_t.half()
@@ -215,13 +218,13 @@ class Upscaler:
                 self._model, img_t, self._scale,
                 self._tile, tile_pad=10, device=self._device,
             )
+            del img_t
 
-            # Tensor -> BGR uint8
-            output = output.squeeze(0).float().clamp(0, 1)
-            output = output.permute(1, 2, 0).numpy()
-            output = (output * 255.0).round().astype(np.uint8)
-            output = output[:, :, ::-1]  # RGB -> BGR
-            return output.copy()
+            # Clamp on device, then single transfer to CPU
+            output = output.squeeze(0).clamp_(0, 1).float().cpu()
+            result = (output.permute(1, 2, 0).numpy() * 255.0 + 0.5).astype(np.uint8)
+            del output
+            return np.ascontiguousarray(result[:, :, ::-1])  # RGB -> BGR
 
     def unload(self):
         """Free GPU memory used by the upscaler model."""

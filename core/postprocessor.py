@@ -89,7 +89,7 @@ class PostProcessor:
 
         full_h, full_w = colorized.shape[:2]
         if guide.shape[:2] != (full_h, full_w):
-            guide = cv2.resize(guide, (full_w, full_h), interpolation=cv2.INTER_LANCZOS4)
+            guide = cv2.resize(guide, (full_w, full_h), interpolation=cv2.INTER_AREA)
 
         # Decide whether to downscale for performance
         max_edge = max(full_h, full_w)
@@ -106,18 +106,20 @@ class PostProcessor:
             work_guide = guide
 
         # Work in LAB — filter only chrominance channels
-        lab = cv2.cvtColor(work_color, cv2.COLOR_BGR2LAB).astype(np.float32) / 255.0
-        guide_f = work_guide.astype(np.float32) / 255.0
+        lab = cv2.cvtColor(work_color, cv2.COLOR_BGR2LAB)
+        guide_f = work_guide.astype(np.float32, copy=False) * (1.0 / 255.0)
+        a_f = lab[:, :, 1].astype(np.float32) * (1.0 / 255.0)
+        b_f = lab[:, :, 2].astype(np.float32) * (1.0 / 255.0)
 
-        lab[:, :, 1] = cv2.ximgproc.guidedFilter(guide_f, lab[:, :, 1], radius, eps)
-        lab[:, :, 2] = cv2.ximgproc.guidedFilter(guide_f, lab[:, :, 2], radius, eps)
+        a_f = cv2.ximgproc.guidedFilter(guide_f, a_f, radius, eps)
+        b_f = cv2.ximgproc.guidedFilter(guide_f, b_f, radius, eps)
 
         if need_downscale:
-            # Extract filtered A/B at small size, upscale back to full
-            a_filtered = np.clip(lab[:, :, 1] * 255.0, 0, 255).astype(np.uint8)
-            b_filtered = np.clip(lab[:, :, 2] * 255.0, 0, 255).astype(np.uint8)
-            a_full = cv2.resize(a_filtered, (full_w, full_h), interpolation=cv2.INTER_LINEAR)
-            b_full = cv2.resize(b_filtered, (full_w, full_h), interpolation=cv2.INTER_LINEAR)
+            # Upscale filtered A/B back to full resolution
+            a_full = cv2.resize(np.clip(a_f * 255.0, 0, 255).astype(np.uint8),
+                                (full_w, full_h), interpolation=cv2.INTER_CUBIC)
+            b_full = cv2.resize(np.clip(b_f * 255.0, 0, 255).astype(np.uint8),
+                                (full_w, full_h), interpolation=cv2.INTER_CUBIC)
 
             # Rebuild full-res LAB with original L + filtered A,B
             full_lab = cv2.cvtColor(colorized, cv2.COLOR_BGR2LAB)
@@ -125,5 +127,6 @@ class PostProcessor:
             full_lab[:, :, 2] = b_full
             return cv2.cvtColor(full_lab, cv2.COLOR_LAB2BGR)
 
-        lab = np.clip(lab * 255.0, 0, 255).astype(np.uint8)
+        lab[:, :, 1] = np.clip(a_f * 255.0, 0, 255).astype(np.uint8)
+        lab[:, :, 2] = np.clip(b_f * 255.0, 0, 255).astype(np.uint8)
         return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)

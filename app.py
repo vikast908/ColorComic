@@ -31,6 +31,9 @@ from models.schemas import JobState
 
 load_dotenv()
 
+# Enable cudnn autotuner for consistent input sizes (mc-v2 576x576, MangaNinja 512x512)
+torch.backends.cudnn.benchmark = True
+
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
@@ -204,7 +207,7 @@ def start_colorize(job_id):
             # Get the right colorizer for this mode
             colorizer = model_manager.get_colorizer(job.mode)
 
-            # Load reference image if in reference mode
+            # Load reference image once outside the loop
             ref_image = None
             if job.mode == "reference" and job.reference_image_path:
                 ref_image = cv2.imread(job.reference_image_path)
@@ -212,39 +215,40 @@ def start_colorize(job_id):
             consistency = ColorConsistencyManager()
             colored_paths = []
 
-            for i, img_path in enumerate(job.page_images):
-                q.put({"page": i, "total": job.page_count, "status": "colorizing"})
+            with torch.inference_mode():
+                for i, img_path in enumerate(job.page_images):
+                    q.put({"page": i, "total": job.page_count, "status": "colorizing"})
 
-                image = cv2.imread(img_path)
+                    image = cv2.imread(img_path)
 
-                # Colorize based on mode
-                if job.mode == "reference":
-                    result = colorizer.colorize(image, reference_image=ref_image)
-                else:
-                    result = colorizer.colorize(image)
-
-                # Post-processing (applied to both modes)
-                result = post_processor.process(result, image)
-
-                # Color consistency: only for auto mode (reference mode has
-                # inherent consistency from the reference image)
-                if job.mode == "auto":
-                    if i == 0:
-                        consistency.set_reference(result)
+                    # Colorize based on mode
+                    if job.mode == "reference":
+                        result = colorizer.colorize(image, reference_image=ref_image)
                     else:
-                        result = consistency.apply(
-                            result, strength=Config.COLOR_TRANSFER_STRENGTH
-                        )
+                        result = colorizer.colorize(image)
 
-                out_path = os.path.join(out_dir, f"colored_{i:04d}.jpg")
-                cv2.imwrite(out_path, result, [cv2.IMWRITE_JPEG_QUALITY, 95])
-                colored_paths.append(out_path)
+                    # Post-processing (applied to both modes)
+                    result = post_processor.process(result, image)
 
-                # Update incrementally so preview endpoint works during processing
-                job.colorized_images = list(colored_paths)
+                    # Color consistency: only for auto mode (reference mode has
+                    # inherent consistency from the reference image)
+                    if job.mode == "auto":
+                        if i == 0:
+                            consistency.set_reference(result)
+                        else:
+                            result = consistency.apply(
+                                result, strength=Config.COLOR_TRANSFER_STRENGTH
+                            )
 
-                job.progress = (i + 1) / job.page_count
-                q.put({"page": i, "total": job.page_count, "status": "done_page"})
+                    out_path = os.path.join(out_dir, f"colored_{i:04d}.jpg")
+                    cv2.imwrite(out_path, result, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    colored_paths.append(out_path)
+
+                    # Update incrementally so preview endpoint works during processing
+                    job.colorized_images.append(out_path)
+
+                    job.progress = (i + 1) / job.page_count
+                    q.put({"page": i, "total": job.page_count, "status": "done_page"})
 
             # Reassemble PDF
             output_pdf = os.path.join(out_dir, "colorized.pdf")
@@ -256,6 +260,8 @@ def start_colorize(job_id):
             job.status = "error"
             job.current_step = str(e)
             q.put({"error": str(e), "done": True})
+        finally:
+            job_queues.pop(job_id, None)
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"ok": True})

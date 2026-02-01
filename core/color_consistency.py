@@ -43,8 +43,8 @@ class ColorConsistencyManager:
             # Not enough colored pixels — skip
             return
 
-        a_vals = lab[:, :, 1][mask]
-        b_vals = lab[:, :, 2][mask]
+        a_vals = lab[mask, 1]
+        b_vals = lab[mask, 2]
 
         self._ref_mean_a = float(np.mean(a_vals))
         self._ref_std_a = float(np.std(a_vals)) or 1.0
@@ -75,29 +75,29 @@ class ColorConsistencyManager:
         if mask.sum() < 100:
             return image
 
-        # Current page statistics (masked)
-        a_vals = lab[:, :, 1][mask]
-        b_vals = lab[:, :, 2][mask]
+        # Current page statistics (masked) — direct indexing avoids intermediate views
+        a_vals = lab[mask, 1]
+        b_vals = lab[mask, 2]
 
         src_mean_a = float(np.mean(a_vals))
         src_std_a = float(np.std(a_vals)) or 1.0
         src_mean_b = float(np.mean(b_vals))
         src_std_b = float(np.std(b_vals)) or 1.0
 
-        # Reinhard transfer on A channel
-        a_ch = lab[:, :, 1].copy()
-        a_transferred = ((a_ch - src_mean_a) * (self._ref_std_a / src_std_a)
-                         + self._ref_mean_a)
-        lab[:, :, 1] = a_ch + strength * (a_transferred - a_ch)
+        # Reinhard transfer — in-place to avoid copies
+        # A channel: out = orig + strength * (transferred - orig)
+        #          = orig * (1 - strength) + transferred * strength
+        a_scale = self._ref_std_a / src_std_a
+        a_shift = self._ref_mean_a - src_mean_a * a_scale
+        lab[:, :, 1] += strength * (lab[:, :, 1] * (a_scale - 1.0) + a_shift)
 
-        # Reinhard transfer on B channel
-        b_ch = lab[:, :, 2].copy()
-        b_transferred = ((b_ch - src_mean_b) * (self._ref_std_b / src_std_b)
-                         + self._ref_mean_b)
-        lab[:, :, 2] = b_ch + strength * (b_transferred - b_ch)
+        # B channel
+        b_scale = self._ref_std_b / src_std_b
+        b_shift = self._ref_mean_b - src_mean_b * b_scale
+        lab[:, :, 2] += strength * (lab[:, :, 2] * (b_scale - 1.0) + b_shift)
 
-        # Clamp to valid LAB range and convert back
-        lab[:, :, 1] = np.clip(lab[:, :, 1], 0, 255)
-        lab[:, :, 2] = np.clip(lab[:, :, 2], 0, 255)
+        # Clamp and convert back in one step
+        np.clip(lab[:, :, 1], 0, 255, out=lab[:, :, 1])
+        np.clip(lab[:, :, 2], 0, 255, out=lab[:, :, 2])
 
         return cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2BGR)

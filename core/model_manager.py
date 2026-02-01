@@ -101,7 +101,7 @@ class ModelManager:
             del self._colorizer
             self._colorizer = None
             self._current_mode = None
-        self._flush_vram()
+            self._flush_vram()
 
     @staticmethod
     def _flush_vram():
